@@ -1179,6 +1179,7 @@ function onSwitchAgent(nextAgentId: string) {
 				@trigger-added="onTriggerAdded"
 				@toggle-task="onToggleTask"
 				@tasks-changed="onConfigUpdated"
+				@agent-changed="refreshAgentAfterIntegrationChange"
 			/>
 
 			<AgentVersionHistoryPanel
