@@ -1,4 +1,4 @@
-import type { IWorkflowGroup } from 'n8n-workflow';
+import type { ExecutionStatus, IWorkflowGroup } from 'n8n-workflow';
 import type { INodeUi } from '@/Interface';
 import type {
 	CanvasConnection,
@@ -126,8 +126,8 @@ export interface GroupAggregateInputs {
 	nodeExecutionRunningById: Record<string, boolean>;
 	nodeExecutionWaitingForNextById: Record<string, boolean>;
 	nodeHasIssuesById: Record<string, boolean>;
-	nodeExecutionStatusById: Record<string, string | undefined>;
-	nodeExecutionRunDataIterationsById: Record<string, number>;
+	nodeExecutionStatusById: Record<string, ExecutionStatus | undefined>;
+	memberIterationsById: Record<string, number>;
 }
 
 /**
@@ -176,16 +176,17 @@ export function aggregateGroupStatus(
 }
 
 /**
- * Sum runData iteration counts across a group's members. Used for the small
- * iteration-count badge next to the success ✓.
+ * Largest per-member iteration count across the group. Used for the small
+ * count badge next to the success ✓ — the badge shows the most-iterated
+ * member so loop/foreach groups surface their iteration depth.
  */
-export function aggregateRunDataIterations(
+export function aggregateMaxMemberIterations(
 	memberIds: string[],
-	nodeExecutionRunDataIterationsById: Record<string, number>,
+	memberIterationsById: Record<string, number>,
 ): number {
 	let max = 0;
 	for (const id of memberIds) {
-		const iter = nodeExecutionRunDataIterationsById[id] ?? 0;
+		const iter = memberIterationsById[id] ?? 0;
 		if (iter > max) max = iter;
 	}
 	return max;
@@ -199,7 +200,6 @@ export interface MapGroupsToVueFlowNodesInputs {
 	autofocusGroupId: string | null;
 	readOnly: boolean;
 	aggregates: GroupAggregateInputs;
-	nodeExecutionRunDataIterationsById: Record<string, number>;
 }
 
 /**
@@ -214,7 +214,6 @@ export function mapGroupsToVueFlowNodes({
 	autofocusGroupId,
 	readOnly,
 	aggregates,
-	nodeExecutionRunDataIterationsById,
 }: MapGroupsToVueFlowNodesInputs): CanvasGroupNode[] {
 	const out: CanvasGroupNode[] = [];
 	for (const group of allGroups) {
@@ -230,10 +229,10 @@ export function mapGroupsToVueFlowNodes({
 			nodesRect,
 			isCollapsed: collapsed,
 			autofocusTitle: autofocusGroupId === group.id,
-			groupStatus: aggregateGroupStatus(group.nodeIds, aggregates),
-			runDataIterations: aggregateRunDataIterations(
+			executionStatus: aggregateGroupStatus(group.nodeIds, aggregates),
+			maxMemberIterations: aggregateMaxMemberIterations(
 				group.nodeIds,
-				nodeExecutionRunDataIterationsById,
+				aggregates.memberIterationsById,
 			),
 		};
 
