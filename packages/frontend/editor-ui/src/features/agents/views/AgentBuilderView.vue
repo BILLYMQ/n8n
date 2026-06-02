@@ -1130,7 +1130,6 @@ function onSwitchAgent(nextAgentId: string) {
 					:connected-triggers="connectedTriggers"
 					:initial-prompt="initialPrompt"
 					:is-builder-configured="isBuilderConfigured"
-					:is-published="Boolean(agent?.activeVersionId)"
 					:is-full-width="isChatFullWidth"
 					:can-edit-agent="canEditAgent"
 					:before-build-send="flushAutosave"
