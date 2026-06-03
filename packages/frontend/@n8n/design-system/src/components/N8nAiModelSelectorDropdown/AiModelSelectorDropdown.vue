@@ -3,8 +3,7 @@
 	lang="ts"
 	generic="TData extends AiModelSelectorMenuItemData = AiModelSelectorMenuItemData"
 >
-import { computed, ref, useCssModule, useTemplateRef } from 'vue';
-import N8nButton from '../N8nButton';
+import { computed, getCurrentInstance, useCssModule, useTemplateRef } from 'vue';
 import N8nDropdownMenu from '../N8nDropdownMenu/DropdownMenu.vue';
 import N8nIcon from '../N8nIcon';
 import N8nText from '../N8nText';
@@ -23,7 +22,6 @@ const {
 	credentialsMissing = false,
 	credentialsMissingLabel,
 	noMatchLabel,
-	text = false,
 	dataTestId,
 	credentialDataTestId,
 	maxSelectedNameChars,
@@ -34,7 +32,6 @@ const {
 	credentialsMissing?: boolean;
 	credentialsMissingLabel: string;
 	noMatchLabel: string;
-	text?: boolean;
 	dataTestId: string;
 	credentialDataTestId: string;
 	maxSelectedNameChars: number;
@@ -42,6 +39,10 @@ const {
 
 const emit = defineEmits<{
 	select: [id: string];
+	/**
+	 * Use this to handle custom search logic in the parent.
+	 * Provide filtered `items` from the parent when handling this event.
+	 */
 	search: [query: string];
 }>();
 
@@ -51,17 +52,16 @@ defineSlots<{
 }>();
 
 const dropdownRef = useTemplateRef('dropdownRef');
-const searchQuery = ref('');
 const $style = useCssModule();
+const instance = getCurrentInstance();
 
-const extraPopperClass = computed(() =>
-	[$style.component, searchQuery.value ? $style.searching : ''].join(' '),
+const hasSearchListener = computed(() => Boolean(instance?.vnode.props?.onSearch));
+
+const extraPopperClass = computed(() => $style.component);
+
+const searchListenerAttrs = computed(() =>
+	hasSearchListener.value ? { onSearch: (query: string) => emit('search', query) } : {},
 );
-
-function handleSearch(query: string) {
-	searchQuery.value = query;
-	emit('search', query);
-}
 
 defineExpose({
 	open: () => dropdownRef.value?.open(),
@@ -72,12 +72,12 @@ defineExpose({
 	<N8nDropdownMenu
 		ref="dropdownRef"
 		:items="items"
+		v-bind="searchListenerAttrs"
 		teleported
 		placement="bottom-start"
 		:extra-popper-class="extraPopperClass"
 		searchable
-		:empty-text="searchQuery ? noMatchLabel : undefined"
-		@search="handleSearch"
+		:empty-text="noMatchLabel"
 		@select="emit('select', $event)"
 	>
 		<template #trigger>
@@ -144,7 +144,7 @@ defineExpose({
 			</N8nText>
 		</template>
 
-		<template #item-trailing="{ item, ui }">
+		<template #item-trailing="{ item }">
 			<N8nTooltip
 				v-if="item.data?.description"
 				:content="truncateBeforeLast(item.data.description, 200, 0)"
