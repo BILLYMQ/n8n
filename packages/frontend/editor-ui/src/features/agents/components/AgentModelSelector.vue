@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, useTemplateRef } from 'vue';
-import { N8nIcon } from '@n8n/design-system';
+import {
+	N8nAiModelSelectorDropdown,
+	N8nIcon,
+	type AiModelSelectorMenuItem,
+	type AiModelSelectorMenuItemData,
+} from '@n8n/design-system';
 import { useI18n } from '@n8n/i18n';
 import { truncateBeforeLast } from '@n8n/utils';
 import { getResourcePermissions } from '@n8n/permissions';
@@ -8,11 +13,6 @@ import { useCredentialsStore } from '@/features/credentials/credentials.store';
 import CredentialIcon from '@/features/credentials/components/CredentialIcon.vue';
 import { useProjectsStore } from '@/features/collaboration/projects/projects.store';
 import { useUIStore } from '@/app/stores/ui.store';
-import AiModelSelectorDropdown from '@/features/ai/modelSelector/AiModelSelectorDropdown.vue';
-import type {
-	AiModelSelectorMenuItem,
-	AiModelSelectorMenuItemData,
-} from '@/features/ai/modelSelector/types';
 import {
 	AGENT_MODEL_PROVIDER_DEFINITIONS,
 	AGENT_MODEL_PROVIDERS,
@@ -42,7 +42,6 @@ const {
 	modelsByProvider,
 	isLoading,
 	projectId,
-	horizontal = false,
 	warnMissingCredentials = false,
 } = defineProps<{
 	selectedModel: AgentModelOption | null;
@@ -50,7 +49,6 @@ const {
 	modelsByProvider: AgentModelsByProvider;
 	isLoading: boolean;
 	projectId?: string;
-	horizontal?: boolean;
 	warnMissingCredentials?: boolean;
 }>();
 
@@ -337,7 +335,7 @@ defineExpose({
 </script>
 
 <template>
-	<AiModelSelectorDropdown
+	<N8nAiModelSelectorDropdown
 		ref="dropdownRef"
 		:items="filteredMenu"
 		:selected-label="selectedLabel"
@@ -345,7 +343,6 @@ defineExpose({
 		:credentials-missing="isCredentialsMissing"
 		:credentials-missing-label="i18n.baseText('agents.modelSelector.credentialsMissing')"
 		:no-match-label="i18n.baseText('agents.modelSelector.noMatch')"
-		:horizontal="horizontal"
 		data-test-id="agent-model-selector"
 		credential-data-test-id="agent-model-selector-credential"
 		:max-selected-name-chars="MAX_SELECTED_NAME_CHARS"
@@ -378,5 +375,5 @@ defineExpose({
 				:class="ui.class"
 			/>
 		</template>
-	</AiModelSelectorDropdown>
+	</N8nAiModelSelectorDropdown>
 </template>
