@@ -3,16 +3,26 @@ import { ExecutionRepository } from '@n8n/db';
 import { OnLeaderStepdown, OnLeaderTakeover } from '@n8n/decorators';
 import { Service } from '@n8n/di';
 import { InstanceSettings } from 'n8n-core';
-import { UnexpectedError, type IWorkflowExecutionDataProcess } from 'n8n-workflow';
+import {
+	sleep,
+	UnexpectedError,
+	type IRun,
+	type IWorkflowExecutionDataProcess,
+	type RelatedExecution,
+} from 'n8n-workflow';
 
 import { ActiveExecutions } from '@/active-executions';
 import { ExecutionAlreadyResumingError } from '@/errors/execution-already-resuming.error';
 import { OwnershipService } from '@/services/ownership.service';
 import { WorkflowRunner } from '@/workflow-runner';
+
 import {
 	shouldRestartParentExecution,
 	updateParentExecutionWithChildResults,
 } from './workflow-helpers';
+
+/** How many times each parent-resume step is attempted before giving up. */
+const MAX_PARENT_RESUME_ATTEMPTS = 3;
 
 @Service()
 export class WaitTracker {
@@ -147,23 +157,65 @@ export class WaitTracker {
 		const { parentExecution } = fullExecutionData.data;
 		if (shouldRestartParentExecution(parentExecution)) {
 			// on child execution completion, resume parent execution
-			void this.activeExecutions
-				.getPostExecutePromise(executionId)
-				.then(async (subworkflowResults) => {
-					if (!subworkflowResults) return;
-					if (subworkflowResults.status === 'waiting') return; // The child execution is waiting, not completing.
-					await updateParentExecutionWithChildResults(
-						this.executionRepository,
-						parentExecution.executionId,
-						subworkflowResults,
-					);
-					return subworkflowResults;
-				})
-				.then((subworkflowResults) => {
-					if (!subworkflowResults) return;
-					if (subworkflowResults.status === 'waiting') return; // The child execution is waiting, not completing.
-					void this.startExecution(parentExecution.executionId);
-				});
+			void this.resumeParentExecution(
+				parentExecution,
+				this.activeExecutions.getPostExecutePromise(executionId),
+			);
+		}
+	}
+
+	/**
+	 * Resume a parent execution once its child execution has completed.
+	 *
+	 * The resume crosses several async boundaries (DB write to patch the parent,
+	 * then resuming the parent). Each step is retried up to `MAX_PARENT_RESUME_ATTEMPTS`
+	 * so a transient failure recovers and the parent resumes.
+	 * If every attempt fails, the error is caught and logged below; the parent stays in `waiting`, but the
+	 * failure is now visible and attributable instead of lost.
+	 * This never rejects, so callers can invoke it as fire and forget.
+	 */
+	async resumeParentExecution(
+		parentExecution: RelatedExecution,
+		executePromise: Promise<IRun | undefined>,
+	): Promise<void> {
+		try {
+			const subworkflowResults = await executePromise;
+			if (!subworkflowResults) return;
+			if (subworkflowResults.status === 'waiting') return; // The child execution is waiting, not completing.
+
+			await this.withRetry(async () => {
+				await updateParentExecutionWithChildResults(
+					this.executionRepository,
+					parentExecution.executionId,
+					subworkflowResults,
+				);
+			}, MAX_PARENT_RESUME_ATTEMPTS);
+
+			await this.withRetry(async () => {
+				await this.startExecution(parentExecution.executionId);
+			}, MAX_PARENT_RESUME_ATTEMPTS);
+		} catch (error) {
+			this.logger.error('Failed to resume parent execution after sub-workflow completed', {
+				parentExecutionId: parentExecution.executionId,
+				error: error instanceof Error ? error.message : error,
+			});
+		}
+	}
+
+	/**
+	 * Run an operation up to `attempts` times with exponential backoff, returning
+	 * on the first success and rethrowing the last error if they all fail. Generic
+	 * (not specific to parent resume) — the caller passes the attempt count.
+	 */
+	private async withRetry(operation: () => Promise<void>, attempts: number): Promise<void> {
+		for (let attempt = 1; ; attempt++) {
+			try {
+				await operation();
+				return;
+			} catch (error) {
+				if (attempt >= attempts) throw error;
+				await sleep(100 * 2 ** (attempt - 1));
+			}
 		}
 	}
 
