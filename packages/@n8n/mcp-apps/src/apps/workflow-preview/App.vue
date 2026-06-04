@@ -12,6 +12,9 @@ import { useI18n } from 'vue-i18n';
 
 import { isAllowedWorkflowUrl } from './url';
 import { setLocaleFromHost, type MessageSchema } from '../../i18n';
+import { MCP_APP_EVENTS, useTelemetry } from '../../telemetry';
+
+const APP_SLUG = 'workflow-preview';
 
 type WorkflowResult = {
 	url?: unknown;
@@ -22,6 +25,7 @@ function isWorkflowResult(value: unknown): value is WorkflowResult {
 }
 
 const { t } = useI18n<{ message: MessageSchema }>({ useScope: 'global' });
+const telemetry = useTelemetry();
 
 const hostContext = ref<McpUiHostContext>();
 const workflowUrl = ref<string>();
@@ -72,6 +76,8 @@ async function handleOpenWorkflow() {
 }
 
 onMounted(async () => {
+	telemetry.init();
+
 	const app = new App({ name: 'n8n Workflow Creation', version: '0.1.0' });
 	appRef.value = app;
 
@@ -101,8 +107,16 @@ onMounted(async () => {
 	try {
 		await app.connect();
 		hostContext.value = app.getHostContext();
+		telemetry.track(MCP_APP_EVENTS.PREVIEW_RENDERED, {
+			app: APP_SLUG,
+			boot_ms: Math.round(performance.now()),
+		});
 	} catch (error) {
 		console.error('[n8n MCP App] Failed to connect to host', error);
+		telemetry.track(MCP_APP_EVENTS.PREVIEW_RENDER_FAILED, {
+			app: APP_SLUG,
+			reason: error instanceof Error ? error.message : 'unknown',
+		});
 	}
 });
 </script>

@@ -218,7 +218,7 @@ describe('create-workflow-from-code MCP tool', () => {
 			expect(response.workflowId).toBe('wf-saved-1');
 			expect(response.name).toBeDefined();
 			expect(response.nodeCount).toBe(2);
-			expect(response.url).toBe('https://n8n.example.com/workflow/wf-saved-1');
+			expect(response.url).toBe('https://n8n.example.com/workflow/wf-saved-1?source=mcp');
 			expect(result.isError).toBeUndefined();
 		});
 

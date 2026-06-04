@@ -224,7 +224,9 @@ export const createCreateWorkflowFromCodeTool = (
 			});
 
 			const baseUrl = urlService.getInstanceBaseUrl();
-			const workflowUrl = `${baseUrl}/workflow/${savedWorkflow.id}`;
+			// `source=mcp` lets the n8n frontend attribute the open to the MCP flow
+			// (see useWorkflowInitialization in editor-ui). Keep the value in sync.
+			const workflowUrl = `${baseUrl}/workflow/${savedWorkflow.id}?source=mcp`;
 
 			telemetryPayload.results = {
 				success: true,

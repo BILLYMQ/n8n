@@ -364,6 +364,14 @@ export function useWorkflowInitialization(workflowState: WorkflowState) {
 				);
 			}
 
+			// Opened from an MCP App preview ("Open in n8n"). The backend tags the
+			// URL with `source=mcp` (see create-workflow-from-code.tool.ts). Attribute
+			// the open, then strip the marker so a refresh does not double-count.
+			if (route.query.source === 'mcp') {
+				telemetry.track('User opened workflow from MCP', { workflow_id: id });
+				await router.replace({ ...route, query: { ...route.query, source: undefined } });
+			}
+
 			await projectsStore.setProjectNavActiveIdByWorkflowHomeProject(
 				workflowData.homeProject,
 				workflowData.sharedWithProjects,
