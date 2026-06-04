@@ -22,10 +22,28 @@ export class TelemetryController {
 					return;
 				},
 				proxyRes: (proxyRes) => {
-					// Allow MCP app UIs (sandboxed iframes on a third-party host origin)
-					// to read the proxied response. Overwrites any value from the target
-					// so there is never a duplicate header.
+					// MCP app UIs call this cross-origin from a sandboxed iframe (often an
+					// opaque `null` origin). The upstream data plane sets its own CORS
+					// headers; strip them all and emit exactly one permissive value so the
+					// browser never sees a duplicate/conflicting Access-Control-Allow-Origin.
+					for (const header of [
+						'access-control-allow-origin',
+						'access-control-allow-credentials',
+						'access-control-allow-methods',
+						'access-control-allow-headers',
+						'access-control-expose-headers',
+					]) {
+						delete proxyRes.headers[header];
+					}
 					proxyRes.headers['access-control-allow-origin'] = '*';
+				},
+				error: (_error, _req, res) => {
+					// If the upstream can't be reached, still return CORS so the browser
+					// surfaces the real failure instead of a misleading CORS error.
+					if ('writeHead' in res && !res.headersSent) {
+						res.writeHead(502, { 'Access-Control-Allow-Origin': '*' });
+						res.end('Bad Gateway');
+					}
 				},
 			},
 		});
