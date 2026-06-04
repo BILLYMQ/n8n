@@ -56,22 +56,32 @@ export class TelemetryController {
 	 * third-party host iframes reach them. `Authorization` is allowed because
 	 * the RudderStack SDK sends the write key as a Basic auth header.
 	 */
-	private applyCors(res: Response) {
+	private applyCors(req: AuthenticatedRequest, res: Response) {
 		res.setHeader('Access-Control-Allow-Origin', '*');
 		res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-		res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+		// Reflect whatever headers the browser asks for in the preflight. The
+		// RudderStack SDK sends Content-Type, Authorization and anonymousId, and the
+		// exact set can vary by SDK version, so reflecting avoids the preflight
+		// rejecting an unexpected request header.
+		const requestedHeaders = req.headers['access-control-request-headers'];
+		res.setHeader(
+			'Access-Control-Allow-Headers',
+			typeof requestedHeaders === 'string' && requestedHeaders.length > 0
+				? requestedHeaders
+				: 'Content-Type, Authorization, anonymousId',
+		);
 		res.setHeader('Access-Control-Max-Age', '600');
 	}
 
 	@Options('/proxy/:version/:action', { skipAuth: true })
-	proxyPreflight(_req: AuthenticatedRequest, res: Response) {
-		this.applyCors(res);
+	proxyPreflight(req: AuthenticatedRequest, res: Response) {
+		this.applyCors(req, res);
 		res.status(204).end();
 	}
 
 	@Post('/proxy/:version/track', { skipAuth: true, ipRateLimit: { limit: 100, windowMs: 60_000 } })
 	async track(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-		this.applyCors(res);
+		this.applyCors(req, res);
 		await this.proxy(req, res, next);
 	}
 
@@ -80,19 +90,19 @@ export class TelemetryController {
 		ipRateLimit: { limit: 100, windowMs: 60_000 },
 	})
 	async identify(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-		this.applyCors(res);
+		this.applyCors(req, res);
 		await this.proxy(req, res, next);
 	}
 
 	@Post('/proxy/:version/page', { skipAuth: true, ipRateLimit: { limit: 50, windowMs: 60_000 } })
 	async page(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-		this.applyCors(res);
+		this.applyCors(req, res);
 		await this.proxy(req, res, next);
 	}
 
 	@Options('/rudderstack/sourceConfig', { skipAuth: true })
-	sourceConfigPreflight(_req: AuthenticatedRequest, res: Response) {
-		this.applyCors(res);
+	sourceConfigPreflight(req: AuthenticatedRequest, res: Response) {
+		this.applyCors(req, res);
 		res.status(204).end();
 	}
 
@@ -101,8 +111,8 @@ export class TelemetryController {
 		ipRateLimit: { limit: 50, windowMs: 60_000 },
 		usesTemplates: true,
 	})
-	async sourceConfig(_: Request, res: Response) {
-		this.applyCors(res);
+	async sourceConfig(req: AuthenticatedRequest, res: Response) {
+		this.applyCors(req, res);
 
 		const response = await fetch('https://api-rs.n8n.io/sourceConfig', {
 			headers: {

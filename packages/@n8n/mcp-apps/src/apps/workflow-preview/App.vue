@@ -76,8 +76,6 @@ async function handleOpenWorkflow() {
 }
 
 onMounted(async () => {
-	telemetry.init();
-
 	const app = new App({ name: 'n8n Workflow Creation', version: '0.1.0' });
 	appRef.value = app;
 
@@ -104,18 +102,28 @@ onMounted(async () => {
 
 	app.onerror = console.error;
 
+	let renderError: unknown;
 	try {
 		await app.connect();
 		hostContext.value = app.getHostContext();
+	} catch (error) {
+		renderError = error;
+		console.error('[n8n MCP App] Failed to connect to host', error);
+	}
+
+	// Initialize telemetry only AFTER the host handshake so loading the analytics
+	// SDK can never interfere with the app's connection. Telemetry is best-effort
+	// and must never block the preview from rendering.
+	telemetry.init();
+	if (renderError === undefined) {
 		telemetry.track(MCP_APP_EVENTS.PREVIEW_RENDERED, {
 			app: APP_SLUG,
 			boot_ms: Math.round(performance.now()),
 		});
-	} catch (error) {
-		console.error('[n8n MCP App] Failed to connect to host', error);
+	} else {
 		telemetry.track(MCP_APP_EVENTS.PREVIEW_RENDER_FAILED, {
 			app: APP_SLUG,
-			reason: error instanceof Error ? error.message : 'unknown',
+			reason: renderError instanceof Error ? renderError.message : 'unknown',
 		});
 	}
 });
