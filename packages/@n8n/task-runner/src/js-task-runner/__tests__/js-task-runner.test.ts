@@ -1798,6 +1798,52 @@ describe('JsTaskRunner', () => {
 
 			expect(outcome.result).toEqual({ val: 2 });
 		});
+
+		// CAT-3208 / GH #24307: in secure mode the runner freezes Object.prototype
+		// (see preventPrototypePollution in js-task-runner.ts), which makes the
+		// inherited __lookupGetter__ / __lookupSetter__ / __defineGetter__ /
+		// __defineSetter__ accessor methods read-only. Expression.initializeGlobalContext
+		// then threw "Cannot assign to read only property '__lookupGetter__'" when it
+		// tried to overwrite them via plain assignment. The global freeze is skipped
+		// under NODE_ENV=test, so we reproduce the condition by reversibly marking just
+		// those accessor methods read-only on Object.prototype for the duration of the test.
+		describe('with a frozen Object.prototype (secure-mode parity)', () => {
+			const accessorKeys = [
+				'__lookupGetter__',
+				'__lookupSetter__',
+				'__defineGetter__',
+				'__defineSetter__',
+			] as const;
+			const originalDescriptors = new Map<string, PropertyDescriptor>();
+
+			beforeEach(() => {
+				for (const key of accessorKeys) {
+					const descriptor = Object.getOwnPropertyDescriptor(Object.prototype, key)!;
+					originalDescriptors.set(key, descriptor);
+					Object.defineProperty(Object.prototype, key, {
+						...descriptor,
+						writable: false,
+						configurable: true,
+					});
+				}
+			});
+
+			afterEach(() => {
+				for (const key of accessorKeys) {
+					Object.defineProperty(Object.prototype, key, originalDescriptors.get(key)!);
+				}
+				originalDescriptors.clear();
+			});
+
+			it('should evaluate $evaluateExpression without throwing on read-only prototype accessors', async () => {
+				const outcome = await executeForAllItems({
+					code: "return { val: $evaluateExpression('{{ 1 + 1 }}') }",
+					inputItems: [],
+				});
+
+				expect(outcome.result).toEqual({ val: 2 });
+			});
+		});
 	});
 
 	describe('runCode mode', () => {
