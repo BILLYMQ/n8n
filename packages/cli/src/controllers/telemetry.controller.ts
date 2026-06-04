@@ -71,6 +71,7 @@ export class TelemetryController {
 
 	@Post('/proxy/:version/track', { skipAuth: true, ipRateLimit: { limit: 100, windowMs: 60_000 } })
 	async track(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+		this.applyCors(res);
 		await this.proxy(req, res, next);
 	}
 
@@ -79,11 +80,13 @@ export class TelemetryController {
 		ipRateLimit: { limit: 100, windowMs: 60_000 },
 	})
 	async identify(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+		this.applyCors(res);
 		await this.proxy(req, res, next);
 	}
 
 	@Post('/proxy/:version/page', { skipAuth: true, ipRateLimit: { limit: 50, windowMs: 60_000 } })
 	async page(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+		this.applyCors(res);
 		await this.proxy(req, res, next);
 	}
 
