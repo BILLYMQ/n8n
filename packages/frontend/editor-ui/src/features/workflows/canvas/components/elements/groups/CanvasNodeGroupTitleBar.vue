@@ -49,7 +49,7 @@ const titleText = useTemplateRef<HTMLElement>('titleText');
 const group = computed(() => props.data.group);
 const isCollapsed = computed(() => props.data.isCollapsed);
 const executionStatus = computed(() => props.data.executionStatus);
-const maxMemberIterations = computed(() => props.data.maxMemberIterations);
+const maxNodeIterations = computed(() => props.data.maxNodeIterations);
 
 const frameStyle = computed(() => ({
 	top: `${HEADER_HEIGHT}px`,
@@ -229,7 +229,7 @@ function onWrapperPointerDown(event: PointerEvent) {
 					:class="$style.statusIcons"
 					data-test-id="canvas-node-group-status-success"
 				>
-					<CanvasNodeStatusMark status="success" :iterations="maxMemberIterations" />
+					<CanvasNodeStatusMark status="success" :iterations="maxNodeIterations" />
 				</div>
 				<div
 					v-else-if="executionStatus === 'error' || executionStatus === 'crashed'"
@@ -280,7 +280,7 @@ function onWrapperPointerDown(event: PointerEvent) {
 	}
 
 	// Status only manifests when the group is collapsed — when expanded
-	// the members render their own outlines.
+	// the nodes render their own outlines.
 	.wrapper.collapsed.success & {
 		@include styles.status-success;
 	}

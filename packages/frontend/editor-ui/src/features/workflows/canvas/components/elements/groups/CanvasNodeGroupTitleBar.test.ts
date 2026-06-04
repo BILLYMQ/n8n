@@ -44,7 +44,7 @@ function makeData(overrides: Partial<CanvasGroupViewState> = {}): CanvasGroupVie
 		isCollapsed: true,
 		autofocusTitle: false,
 		executionStatus: undefined,
-		maxMemberIterations: 0,
+		maxNodeIterations: 0,
 		...overrides,
 	};
 }
@@ -164,9 +164,9 @@ describe('CanvasNodeGroupTitleBar', () => {
 			expect(wrapper.getByTestId('canvas-node-group-status-error')).toBeTruthy();
 		});
 
-		it('shows iteration count on success when maxMemberIterations > 1', () => {
+		it('shows iteration count on success when maxNodeIterations > 1', () => {
 			const wrapper = render({
-				data: makeData({ executionStatus: 'success', maxMemberIterations: 3 }),
+				data: makeData({ executionStatus: 'success', maxNodeIterations: 3 }),
 			});
 			const icon = wrapper.getByTestId('canvas-node-group-status-success');
 			expect(icon).toHaveTextContent('3');

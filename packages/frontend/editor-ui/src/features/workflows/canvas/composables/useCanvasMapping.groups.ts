@@ -127,29 +127,29 @@ export interface GroupAggregateInputs {
 	nodeExecutionWaitingById: Record<string, string | undefined>;
 	nodeHasIssuesById: Record<string, boolean>;
 	nodeExecutionStatusById: Record<string, ExecutionStatus | undefined>;
-	memberIterationsById: Record<string, number>;
+	nodeIterationsById: Record<string, number>;
 }
 
 /**
- * Aggregate per-member execution state into a single group-level status,
+ * Aggregate per-node execution state into a single group-level status,
  * narrowed from `ExecutionStatus`.
  *
  * Priority mirrors the single-node CSS rule order (later rules win), so the
- * group surfaces the same dominant state a user would see on a member node:
+ * group surfaces the same dominant state a user would see on one of its nodes:
  *   waiting > running > crashed > error > success > idle
  *
- * - `waiting`   any member is paused waiting for input (form, webhook, etc.).
- * - `running`   any member is running or queued to start next.
- * - `crashed`   any member has executionStatus 'crashed'. Surfaced
+ * - `waiting`   any node is paused waiting for input (form, webhook, etc.).
+ * - `running`   any node is running or queued to start next.
+ * - `crashed`   any node has executionStatus 'crashed'. Surfaced
  *               distinctly so the data layer doesn't lose info; the title
  *               bar still maps it to the error visual, matching how the
  *               single-node visual treats crashed via `hasExecutionErrors`.
- * - `error`     any member has issues or executionStatus 'error'.
- *               NB: a member that errored with `onError=continue` still
+ * - `error`     any node has issues or executionStatus 'error'.
+ *               NB: a node that errored with `onError=continue` still
  *               contributes here — that matches the single-node visual,
  *               which also flags the offending node despite the workflow
  *               succeeding overall.
- * - `success`   at least one member is 'success' and every other member is
+ * - `success`   at least one node is 'success' and every other node is
  *               'success' or 'unknown' (didn't run — e.g. an untaken
  *               conditional branch).
  * - `undefined` (idle) otherwise. 'canceled' / 'new' / 'unknown' fall
@@ -157,7 +157,7 @@ export interface GroupAggregateInputs {
  *               dedicated class either.
  */
 export function aggregateGroupStatus(
-	memberIds: string[],
+	nodeIds: string[],
 	{
 		nodeExecutionRunningById,
 		nodeExecutionWaitingForNextById,
@@ -173,7 +173,7 @@ export function aggregateGroupStatus(
 	let anySuccess = false;
 	let anyOther = false;
 
-	for (const id of memberIds) {
+	for (const id of nodeIds) {
 		const status = nodeExecutionStatusById[id];
 
 		if (nodeExecutionWaitingById[id] || status === 'waiting') {
@@ -213,17 +213,17 @@ export function aggregateGroupStatus(
 }
 
 /**
- * Largest per-member iteration count across the group. Used for the small
+ * Largest per-node iteration count across the group. Used for the small
  * count badge next to the success ✓ — the badge shows the most-iterated
- * member so loop/foreach groups surface their iteration depth.
+ * node so loop/foreach groups surface their iteration depth.
  */
-export function aggregateMaxMemberIterations(
-	memberIds: string[],
-	memberIterationsById: Record<string, number>,
+export function aggregateMaxNodeIterations(
+	nodeIds: string[],
+	nodeIterationsById: Record<string, number>,
 ): number {
 	let max = 0;
-	for (const id of memberIds) {
-		const iter = memberIterationsById[id] ?? 0;
+	for (const id of nodeIds) {
+		const iter = nodeIterationsById[id] ?? 0;
 		if (iter > max) max = iter;
 	}
 	return max;
@@ -267,10 +267,7 @@ export function mapGroupsToVueFlowNodes({
 			isCollapsed: collapsed,
 			autofocusTitle: autofocusGroupId === group.id,
 			executionStatus: aggregateGroupStatus(group.nodeIds, aggregates),
-			maxMemberIterations: aggregateMaxMemberIterations(
-				group.nodeIds,
-				aggregates.memberIterationsById,
-			),
+			maxNodeIterations: aggregateMaxNodeIterations(group.nodeIds, aggregates.nodeIterationsById),
 		};
 
 		const titleBar = titleBarFromNodesRect(nodesRect);

@@ -4,7 +4,7 @@ import type { INodeUi } from '@/Interface';
 import type { CanvasConnection } from '../canvas.types';
 import {
 	aggregateGroupStatus,
-	aggregateMaxMemberIterations,
+	aggregateMaxNodeIterations,
 	buildCollapsedGroupByNodeId,
 	computeNodesRectFromStore,
 	mapGroupsToVueFlowNodes,
@@ -56,7 +56,7 @@ const EMPTY_AGG = {
 	nodeExecutionWaitingById: {},
 	nodeHasIssuesById: {},
 	nodeExecutionStatusById: {},
-	memberIterationsById: {},
+	nodeIterationsById: {},
 };
 
 describe('computeNodesRectFromStore', () => {
@@ -117,7 +117,7 @@ describe('computeNodesRectFromStore', () => {
 });
 
 describe('aggregateGroupStatus (AC #7)', () => {
-	it('returns running when any member is running', () => {
+	it('returns running when any node is running', () => {
 		const status = aggregateGroupStatus(['a', 'b'], {
 			...EMPTY_AGG,
 			nodeExecutionRunningById: { a: true },
@@ -125,7 +125,7 @@ describe('aggregateGroupStatus (AC #7)', () => {
 		expect(status).toBe('running');
 	});
 
-	it('returns running when any member is waitingForNext', () => {
+	it('returns running when any node is waitingForNext', () => {
 		const status = aggregateGroupStatus(['a'], {
 			...EMPTY_AGG,
 			nodeExecutionWaitingForNextById: { a: true },
@@ -133,7 +133,7 @@ describe('aggregateGroupStatus (AC #7)', () => {
 		expect(status).toBe('running');
 	});
 
-	it('returns error when any member has issues', () => {
+	it('returns error when any node has issues', () => {
 		const status = aggregateGroupStatus(['a', 'b'], {
 			...EMPTY_AGG,
 			nodeHasIssuesById: { b: true },
@@ -144,7 +144,7 @@ describe('aggregateGroupStatus (AC #7)', () => {
 	// onError=continue surfaces `task.error` on the offending node (via
 	// nodeHasIssuesById) even when the overall workflow succeeds. The
 	// single-node visual also marks that node as errored.
-	it('returns error when a member errored with onError=continue (task.error set, status success)', () => {
+	it('returns error when a node errored with onError=continue (task.error set, status success)', () => {
 		const status = aggregateGroupStatus(['a', 'b'], {
 			...EMPTY_AGG,
 			nodeHasIssuesById: { a: true },
@@ -153,7 +153,7 @@ describe('aggregateGroupStatus (AC #7)', () => {
 		expect(status).toBe('error');
 	});
 
-	it('returns error when any member has executionStatus error', () => {
+	it('returns error when any node has executionStatus error', () => {
 		expect(
 			aggregateGroupStatus(['a'], {
 				...EMPTY_AGG,
@@ -195,7 +195,7 @@ describe('aggregateGroupStatus (AC #7)', () => {
 		).toBeUndefined();
 	});
 
-	it('returns success when all members are success', () => {
+	it('returns success when all nodes are success', () => {
 		const status = aggregateGroupStatus(['a', 'b'], {
 			...EMPTY_AGG,
 			nodeExecutionStatusById: { a: 'success', b: 'success' },
@@ -203,7 +203,7 @@ describe('aggregateGroupStatus (AC #7)', () => {
 		expect(status).toBe('success');
 	});
 
-	it('returns success when one member is success and others never ran (unknown) — AC #7 conditional branching', () => {
+	it('returns success when one node is success and others never ran (unknown) — AC #7 conditional branching', () => {
 		const status = aggregateGroupStatus(['a', 'b'], {
 			...EMPTY_AGG,
 			nodeExecutionStatusById: { a: 'success', b: 'unknown' },
@@ -211,7 +211,7 @@ describe('aggregateGroupStatus (AC #7)', () => {
 		expect(status).toBe('success');
 	});
 
-	it('returns undefined (idle) when all members are unknown — workflow has never executed', () => {
+	it('returns undefined (idle) when all nodes are unknown — workflow has never executed', () => {
 		const status = aggregateGroupStatus(['a', 'b'], {
 			...EMPTY_AGG,
 			nodeExecutionStatusById: { a: 'unknown', b: 'unknown' },
@@ -219,12 +219,12 @@ describe('aggregateGroupStatus (AC #7)', () => {
 		expect(status).toBeUndefined();
 	});
 
-	it('returns undefined when no member status is set', () => {
+	it('returns undefined when no node status is set', () => {
 		const status = aggregateGroupStatus(['a', 'b'], EMPTY_AGG);
 		expect(status).toBeUndefined();
 	});
 
-	it('returns waiting when any member has a waiting reason (form/webhook/etc.)', () => {
+	it('returns waiting when any node has a waiting reason (form/webhook/etc.)', () => {
 		const status = aggregateGroupStatus(['a', 'b'], {
 			...EMPTY_AGG,
 			nodeExecutionWaitingById: { a: 'waiting for webhook' },
@@ -232,7 +232,7 @@ describe('aggregateGroupStatus (AC #7)', () => {
 		expect(status).toBe('waiting');
 	});
 
-	it('returns waiting when any member has executionStatus waiting', () => {
+	it('returns waiting when any node has executionStatus waiting', () => {
 		const status = aggregateGroupStatus(['a'], {
 			...EMPTY_AGG,
 			nodeExecutionStatusById: { a: 'waiting' },
@@ -267,12 +267,12 @@ describe('aggregateGroupStatus (AC #7)', () => {
 	});
 });
 
-describe('aggregateMaxMemberIterations', () => {
-	it('returns the maximum iteration count across members', () => {
-		expect(aggregateMaxMemberIterations(['a', 'b'], { a: 1, b: 5 })).toBe(5);
+describe('aggregateMaxNodeIterations', () => {
+	it('returns the maximum iteration count across nodes', () => {
+		expect(aggregateMaxNodeIterations(['a', 'b'], { a: 1, b: 5 })).toBe(5);
 	});
 	it('returns 0 when nothing is set', () => {
-		expect(aggregateMaxMemberIterations(['a'], {})).toBe(0);
+		expect(aggregateMaxNodeIterations(['a'], {})).toBe(0);
 	});
 });
 
@@ -463,7 +463,7 @@ describe('reanchorCollapsedConnections (AC #10)', () => {
 		expect(result[0].target).toBe('b');
 	});
 
-	it('dedupes two edges from the same external endpoint to two members of the same collapsed group', () => {
+	it('dedupes two edges from the same external endpoint to two nodes of the same collapsed group', () => {
 		const collapsedMap = buildCollapsedGroupByNodeId([g1], () => true);
 		const result = reanchorCollapsedConnections(
 			[makeEdge('external', 'm1'), makeEdge('external', 'm2')],
@@ -520,7 +520,7 @@ describe('reanchorCollapsedConnections (AC #10)', () => {
 		expect(result[0].data?.source.type).toBe('ai_tool');
 	});
 
-	it('structural invariant: no edge references a collapsed member as endpoint', () => {
+	it('structural invariant: no edge references a collapsed node as endpoint', () => {
 		const collapsedMap = buildCollapsedGroupByNodeId([g1], () => true);
 		const result = reanchorCollapsedConnections(
 			[makeEdge('external', 'm1'), makeEdge('m2', 'external2'), makeEdge('m1', 'm2')],

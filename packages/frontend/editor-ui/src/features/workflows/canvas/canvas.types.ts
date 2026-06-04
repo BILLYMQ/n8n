@@ -145,7 +145,7 @@ export interface CanvasGroupViewState {
 	isCollapsed: boolean;
 	autofocusTitle: boolean;
 	executionStatus: ExecutionStatus | undefined;
-	maxMemberIterations: number;
+	maxNodeIterations: number;
 }
 
 export type CanvasGroupNode = Node<CanvasGroupViewState>;
