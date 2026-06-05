@@ -2,28 +2,19 @@ import { LicenseState } from '@n8n/backend-common';
 import { createTeamProject, testDb, testModules } from '@n8n/backend-test-utils';
 import { ProjectRepository, SharedWorkflowRepository, WorkflowRepository } from '@n8n/db';
 import { Container } from '@n8n/di';
-import type { Readable } from 'node:stream';
 
 import { BadRequestError } from '@/errors/response-errors/bad-request.error';
 import { EventService } from '@/events/event.service';
-
 import { createFolder } from '@test-integration/db/folders';
 import { createMember, createOwner } from '@test-integration/db/users';
 import { LicenseMocker } from '@test-integration/license';
 
 import { N8nPackagesService } from '../n8n-packages.service';
+import { streamToBuffer } from './utils/tar-support';
 import { TarPackageWriter } from '../io/tar/tar-package-writer';
 import { FORMAT_VERSION } from '../spec/constants';
 import type { PackageManifest } from '../spec/manifest.schema';
 import type { SerializedWorkflow } from '../spec/serialized/workflow.schema';
-
-async function streamToBuffer(stream: Readable): Promise<Buffer> {
-	const chunks: Buffer[] = [];
-	for await (const chunk of stream) {
-		chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as ArrayBuffer));
-	}
-	return Buffer.concat(chunks);
-}
 
 const validWorkflow = (id: string, name: string): SerializedWorkflow => ({
 	id,

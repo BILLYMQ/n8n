@@ -1,7 +1,6 @@
-import type { Readable } from 'node:stream';
-
 import { BadRequestError } from '@/errors/response-errors/bad-request.error';
 
+import { streamToBuffer } from '../../__tests__/utils/tar-support';
 import { TarPackageReader, type TarReaderLimits } from '../tar/tar-package-reader';
 import { TarPackageWriter } from '../tar/tar-package-writer';
 import { buildRawTar } from './utils/raw-tar-builder';
@@ -14,14 +13,6 @@ const DEFAULT_LIMITS: TarReaderLimits = {
 	maxEntries: 5_000,
 	maxPathLength: 1024,
 };
-
-async function streamToBuffer(stream: Readable): Promise<Buffer> {
-	const chunks: Buffer[] = [];
-	for await (const chunk of stream) {
-		chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as ArrayBuffer));
-	}
-	return Buffer.concat(chunks);
-}
 
 async function buildPackage(
 	writeFn: (writer: TarPackageWriter) => void | Promise<void>,
