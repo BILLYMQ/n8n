@@ -20,8 +20,6 @@ import type { ImportPackageRequest, ImportResult } from '../n8n-packages.types';
 import { packageManifestSchema } from '../spec/manifest.schema';
 import type { SerializedWorkflow } from '../spec/serialized/workflow.schema';
 
-const FORBIDDEN_JSON_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
-
 interface ImportTarget {
 	projectId: string;
 	folderId: string | null;
@@ -108,23 +106,6 @@ export class ImportPipeline {
 		}
 	}
 
-	private assertNoForbiddenKeys(value: unknown, sourcePath: string): void {
-		if (value === null || typeof value !== 'object') return;
-		const stack: unknown[] = [value];
-		while (stack.length > 0) {
-			const current = stack.pop();
-			if (current === null || typeof current !== 'object') continue;
-			for (const key of Object.keys(current as Record<string, unknown>)) {
-				if (FORBIDDEN_JSON_KEYS.has(key)) {
-					throw new BadRequestError(
-						`Package file at ${sourcePath} contains a forbidden key: ${key}`,
-					);
-				}
-				stack.push((current as Record<string, unknown>)[key]);
-			}
-		}
-	}
-
 	private async prepareWorkflows(
 		entries: ReadonlyArray<{ id: string; target: string }>,
 		reader: TarPackageReader,
@@ -146,8 +127,6 @@ export class ImportPipeline {
 			const wire = jsonParse<SerializedWorkflow>(content.toString('utf-8'), {
 				errorMessage: `Package workflow file at ${path} is not valid JSON.`,
 			});
-
-			this.assertNoForbiddenKeys(wire, path);
 
 			let entity: WorkflowEntity;
 			try {

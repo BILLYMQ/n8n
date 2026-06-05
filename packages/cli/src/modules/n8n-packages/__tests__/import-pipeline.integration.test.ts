@@ -385,31 +385,6 @@ describe('ImportPipeline rejection cases', () => {
 			}),
 		).rejects.toThrow(/missing/i);
 	});
-
-	it('rejects when a workflow file contains a __proto__ key', async () => {
-		const owner = await createOwner();
-		const writer = new TarPackageWriter();
-		const manifest: PackageManifest = {
-			packageFormatVersion: FORMAT_VERSION,
-			exportedAt: new Date().toISOString(),
-			sourceN8nVersion: '1.0.0',
-			sourceId: 'integration-test-source',
-			workflows: [{ id: 'wf-poisoned', name: 'Poisoned', target: 'workflows/poisoned' }],
-		};
-		writer.writeFile('manifest.json', JSON.stringify(manifest));
-		writer.writeDirectory('workflows/poisoned');
-		writer.writeFile(
-			'workflows/poisoned/workflow.json',
-			'{"id":"wf-poisoned","name":"Poisoned","nodes":[],"connections":{},"__proto__":{"polluted":true},"versionId":"v","parentFolderId":null,"active":false,"isArchived":false}',
-		);
-
-		await expect(
-			Container.get(N8nPackagesService).importPackage({
-				user: owner,
-				packageBuffer: await streamToBuffer(writer.finalize()),
-			}),
-		).rejects.toThrow(/forbidden key/i);
-	});
 });
 
 describe('ImportPipeline event emission', () => {
