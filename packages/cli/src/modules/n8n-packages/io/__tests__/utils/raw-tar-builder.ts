@@ -48,7 +48,6 @@ function writeStringField(block: Buffer, value: string, offset: number, length: 
 	const bytes = Buffer.from(value, 'binary');
 	const copyLen = Math.min(bytes.length, length);
 	bytes.copy(block, offset, 0, copyLen);
-	// Remaining bytes are already zero from Buffer.alloc.
 }
 
 function writeOctalField(block: Buffer, value: number, offset: number, length: number): void {

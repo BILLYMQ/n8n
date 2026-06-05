@@ -114,9 +114,7 @@ export class TarPackageReader implements PackageReader {
 				reject(new BadRequestError(message));
 			};
 
-			// Synchronous gate run on each entry header. Returns the validated
-			// path of a file to read, or null for an entry to skip (a directory).
-			// Throws BadRequestError to reject the whole package.
+			// File path to read, null to skip a directory, or throws to reject.
 			const accept = (entry: ReadEntry): string | null => {
 				if (++entryCount > maxEntries) {
 					throw new BadRequestError('Package contains too many entries');
@@ -151,7 +149,6 @@ export class TarPackageReader implements PackageReader {
 						fail(error instanceof BadRequestError ? error.message : 'Invalid package entry path');
 					}
 				}
-				// Nothing to read: aborted, a skipped directory, or a rejected entry.
 				if (validated === null) {
 					entry.resume();
 					return;
