@@ -1,4 +1,4 @@
-import { GlobalConfig } from '@n8n/config';
+import { GlobalConfig, type PackageImportLimits } from '@n8n/config';
 import type { Project, User } from '@n8n/db';
 import { ProjectRepository, WorkflowEntity } from '@n8n/db';
 import { Service } from '@n8n/di';
@@ -20,7 +20,8 @@ import type { ImportPackageRequest, ImportResult } from '../n8n-packages.types';
 import { packageManifestSchema } from '../spec/manifest.schema';
 import type { SerializedWorkflow } from '../spec/serialized/workflow.schema';
 
-const MEGABYTE_IN_BYTES = 1024 * 1024;
+const MANIFEST_PATH = 'manifest.json';
+const FORBIDDEN_JSON_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 interface ImportTarget {
 	projectId: string;
@@ -34,7 +35,7 @@ interface PreparedWorkflow {
 
 @Service()
 export class ImportPipeline {
-	private readonly maxUncompressedPackageBytes: number;
+	private readonly readerLimits: PackageImportLimits;
 
 	constructor(
 		private readonly workflowSerializer: WorkflowSerializer,
@@ -45,13 +46,15 @@ export class ImportPipeline {
 		private readonly folderService: FolderService,
 		private readonly eventService: EventService,
 	) {
-		this.maxUncompressedPackageBytes = globalConfig.endpoints.payloadSizeMax * MEGABYTE_IN_BYTES;
+		this.readerLimits = globalConfig.packageImport.limits;
 	}
 
 	async run(request: ImportPackageRequest): Promise<ImportResult> {
-		const reader = new TarPackageReader(request.packageBuffer, this.maxUncompressedPackageBytes);
+		const reader = new TarPackageReader(request.packageBuffer, this.readerLimits);
 
 		const manifest = await this.loadPackageManifest(reader);
+
+		this.assertManifestMatchesContents(manifest, await reader.listEntries());
 
 		const { target } = await this.resolveTarget(request.user, request.projectId, request.folderId);
 
@@ -108,6 +111,48 @@ export class ImportPipeline {
 		}
 	}
 
+	private assertManifestMatchesContents(
+		manifest: { workflows?: ReadonlyArray<{ target: string }> },
+		tarEntryPaths: string[],
+	): void {
+		const expected = new Set<string>([MANIFEST_PATH]);
+		for (const entry of manifest.workflows ?? []) {
+			expected.add(`${entry.target}/workflow.json`);
+		}
+
+		const actual = new Set(tarEntryPaths);
+
+		for (const path of actual) {
+			if (!expected.has(path)) {
+				throw new BadRequestError(
+					`Package contains an entry not declared in the manifest: ${path}`,
+				);
+			}
+		}
+		for (const path of expected) {
+			if (!actual.has(path)) {
+				throw new BadRequestError(`Package manifest references a missing entry: ${path}`);
+			}
+		}
+	}
+
+	private assertNoForbiddenKeys(value: unknown, sourcePath: string): void {
+		if (value === null || typeof value !== 'object') return;
+		const stack: unknown[] = [value];
+		while (stack.length > 0) {
+			const current = stack.pop();
+			if (current === null || typeof current !== 'object') continue;
+			for (const key of Object.keys(current as Record<string, unknown>)) {
+				if (FORBIDDEN_JSON_KEYS.has(key)) {
+					throw new BadRequestError(
+						`Package file at ${sourcePath} contains a forbidden key: ${key}`,
+					);
+				}
+				stack.push((current as Record<string, unknown>)[key]);
+			}
+		}
+	}
+
 	private async prepareWorkflows(
 		entries: ReadonlyArray<{ id: string; target: string }>,
 		reader: TarPackageReader,
@@ -129,6 +174,8 @@ export class ImportPipeline {
 			const wire = jsonParse<SerializedWorkflow>(content.toString('utf-8'), {
 				errorMessage: `Package workflow file at ${path} is not valid JSON.`,
 			});
+
+			this.assertNoForbiddenKeys(wire, path);
 
 			let entity: WorkflowEntity;
 			try {
