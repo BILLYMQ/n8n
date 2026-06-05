@@ -1,5 +1,5 @@
-import path from 'node:path';
 import { jsonParse } from 'n8n-workflow';
+import path from 'node:path';
 import { Parser, type ReadEntry } from 'tar';
 
 import { BadRequestError } from '@/errors/response-errors/bad-request.error';
@@ -90,18 +90,18 @@ export class TarPackageReader implements PackageReader {
 	}
 
 	private async parse(): Promise<Map<string, Buffer>> {
+		const { maxEntries, maxEntryBytes, maxUncompressedBytes } = this.limits;
 		const entries = new Map<string, Buffer>();
 		let totalUncompressedBytes = 0;
 		let entryCount = 0;
 		let firstFileSeen = false;
-		let aborted = false;
-		const limits = this.limits;
 
 		return await new Promise((resolve, reject) => {
 			// strict mode turns node-tar's recoverable warnings (bad checksums,
 			// malformed headers, forbidden linkpaths) into errors instead of
 			// silently skipping the offending entry and reading the rest.
 			const parser = new Parser({ strict: true });
+			let aborted = false;
 
 			const fail = (message: string): void => {
 				if (aborted) return;
@@ -114,75 +114,70 @@ export class TarPackageReader implements PackageReader {
 				reject(new BadRequestError(message));
 			};
 
-			parser.on('entry', (entry: ReadEntry) => {
-				if (aborted) {
-					entry.resume();
-					return;
+			// Synchronous gate run on each entry header. Returns the validated
+			// path of a file to read, or null for an entry to skip (a directory).
+			// Throws BadRequestError to reject the whole package.
+			const accept = (entry: ReadEntry): string | null => {
+				if (++entryCount > maxEntries) {
+					throw new BadRequestError('Package contains too many entries');
 				}
-
-				entryCount += 1;
-				if (entryCount > limits.maxEntries) {
-					fail('Package contains too many entries');
-					entry.resume();
-					return;
-				}
-
 				if (entry.type !== 'File' && entry.type !== 'Directory') {
-					fail(`Package contains a disallowed entry type for "${entry.path}"`);
-					entry.resume();
-					return;
+					throw new BadRequestError(`Package contains a disallowed entry type for "${entry.path}"`);
 				}
 
-				let safePath: string;
-				try {
-					safePath = this.validateEntryPath(entry.path);
-				} catch (error) {
-					fail(error instanceof BadRequestError ? error.message : 'Invalid package entry path');
-					entry.resume();
-					return;
-				}
-
+				const safePath = this.validateEntryPath(entry.path);
 				if (entries.has(safePath)) {
-					fail(`Package contains a duplicate entry for "${safePath}"`);
-					entry.resume();
-					return;
+					throw new BadRequestError(`Package contains a duplicate entry for "${safePath}"`);
 				}
-
-				if (entry.type === 'Directory') {
-					entry.resume();
-					return;
-				}
+				if (entry.type === 'Directory') return null;
 
 				if (!firstFileSeen) {
 					firstFileSeen = true;
 					if (safePath !== MANIFEST_PATH) {
-						fail(`Package must begin with ${MANIFEST_PATH} but found "${safePath}"`);
-						entry.resume();
-						return;
+						throw new BadRequestError(
+							`Package must begin with ${MANIFEST_PATH} but found "${safePath}"`,
+						);
 					}
 				}
+				return safePath;
+			};
+
+			parser.on('entry', (entry: ReadEntry) => {
+				let validated: string | null = null;
+				if (!aborted) {
+					try {
+						validated = accept(entry);
+					} catch (error) {
+						fail(error instanceof BadRequestError ? error.message : 'Invalid package entry path');
+					}
+				}
+				// Nothing to read: aborted, a skipped directory, or a rejected entry.
+				if (validated === null) {
+					entry.resume();
+					return;
+				}
+				const safePath = validated;
 
 				const chunks: Buffer[] = [];
 				let entryBytes = 0;
 				entry.on('data', (chunk: Buffer) => {
 					if (aborted) return;
 					entryBytes += chunk.length;
-					if (entryBytes > limits.maxEntryBytes) {
+					if (entryBytes > maxEntryBytes) {
 						fail(
 							`Package entry "${safePath}" exceeds the maximum allowed uncompressed size per entry`,
 						);
 						return;
 					}
 					totalUncompressedBytes += chunk.length;
-					if (totalUncompressedBytes > limits.maxUncompressedBytes) {
+					if (totalUncompressedBytes > maxUncompressedBytes) {
 						fail('Package exceeds the maximum allowed uncompressed size');
 						return;
 					}
 					chunks.push(chunk);
 				});
 				entry.on('end', () => {
-					if (aborted) return;
-					entries.set(safePath, Buffer.concat(chunks));
+					if (!aborted) entries.set(safePath, Buffer.concat(chunks));
 				});
 				entry.resume();
 			});
@@ -193,8 +188,7 @@ export class TarPackageReader implements PackageReader {
 				reject(new BadRequestError('Failed to read package archive'));
 			});
 			parser.on('end', () => {
-				if (aborted) return;
-				resolve(entries);
+				if (!aborted) resolve(entries);
 			});
 			parser.end(this.buffer);
 		});
