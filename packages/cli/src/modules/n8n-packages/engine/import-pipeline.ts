@@ -20,7 +20,6 @@ import type { ImportPackageRequest, ImportResult } from '../n8n-packages.types';
 import { packageManifestSchema } from '../spec/manifest.schema';
 import type { SerializedWorkflow } from '../spec/serialized/workflow.schema';
 
-const MANIFEST_PATH = 'manifest.json';
 const FORBIDDEN_JSON_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 interface ImportTarget {
@@ -53,8 +52,6 @@ export class ImportPipeline {
 		const reader = new TarPackageReader(request.packageBuffer, this.readerLimits);
 
 		const manifest = await this.loadPackageManifest(reader);
-
-		this.assertManifestMatchesContents(manifest, await reader.listEntries());
 
 		const { target } = await this.resolveTarget(request.user, request.projectId, request.folderId);
 
@@ -108,31 +105,6 @@ export class ImportPipeline {
 				throw new BadRequestError('Package manifest failed validation');
 			}
 			throw new BadRequestError('Failed to read package manifest');
-		}
-	}
-
-	private assertManifestMatchesContents(
-		manifest: { workflows?: ReadonlyArray<{ target: string }> },
-		tarEntryPaths: string[],
-	): void {
-		const expected = new Set<string>([MANIFEST_PATH]);
-		for (const entry of manifest.workflows ?? []) {
-			expected.add(`${entry.target}/workflow.json`);
-		}
-
-		const actual = new Set(tarEntryPaths);
-
-		for (const path of actual) {
-			if (!expected.has(path)) {
-				throw new BadRequestError(
-					`Package contains an entry not declared in the manifest: ${path}`,
-				);
-			}
-		}
-		for (const path of expected) {
-			if (!actual.has(path)) {
-				throw new BadRequestError(`Package manifest references a missing entry: ${path}`);
-			}
 		}
 	}
 

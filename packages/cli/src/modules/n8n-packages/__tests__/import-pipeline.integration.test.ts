@@ -386,29 +386,6 @@ describe('ImportPipeline rejection cases', () => {
 		).rejects.toThrow(/missing/i);
 	});
 
-	it('rejects when the tar contains a file not declared in the manifest', async () => {
-		const owner = await createOwner();
-		const writer = new TarPackageWriter();
-		writer.writeFile(
-			'manifest.json',
-			JSON.stringify({
-				packageFormatVersion: FORMAT_VERSION,
-				exportedAt: new Date().toISOString(),
-				sourceN8nVersion: '1.0.0',
-				sourceId: 'integration-test-source',
-				workflows: [],
-			}),
-		);
-		writer.writeFile('workflows/stowaway/workflow.json', JSON.stringify(validWorkflow('w', 'W')));
-
-		await expect(
-			Container.get(N8nPackagesService).importPackage({
-				user: owner,
-				packageBuffer: await streamToBuffer(writer.finalize()),
-			}),
-		).rejects.toThrow(/not declared in the manifest/i);
-	});
-
 	it('rejects when a workflow file contains a __proto__ key', async () => {
 		const owner = await createOwner();
 		const writer = new TarPackageWriter();
