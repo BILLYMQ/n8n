@@ -5,7 +5,12 @@ import type { Project, IExecutionResponse, ExecutionRepository } from '@n8n/db';
 import { mock, captor } from 'jest-mock-extended';
 import type { InstanceSettings } from 'n8n-core';
 import type { IWorkflowBase, IRun, INode, IExecuteData, ITaskData } from 'n8n-workflow';
-import { createDeferredPromise, createRunExecutionData, WAIT_INDEFINITELY } from 'n8n-workflow';
+import {
+	createDeferredPromise,
+	createRunExecutionData,
+	UnexpectedError,
+	WAIT_INDEFINITELY,
+} from 'n8n-workflow';
 
 import type { ActiveExecutions } from '@/active-executions';
 import type { MultiMainSetup } from '@/scaling/multi-main-setup.ee';
@@ -562,7 +567,7 @@ describe('WaitTracker', () => {
 				expect(workflowRunner.run).toHaveBeenCalledTimes(1);
 			});
 
-			describe('transient errors on resuming parent execution', () => {
+			describe('error handling on resuming parent execution', () => {
 				it('should log the failure and not resume the parent when saving the sub-workflow result keeps failing', async () => {
 					// A parent is waiting on a sub-workflow that has just succeeded. The DB write that
 					// patches the parent fails on every attempt, so the retries are exhausted — this is
@@ -694,6 +699,25 @@ describe('WaitTracker', () => {
 						parentExecution.id,
 					);
 					expect(logger.error).not.toHaveBeenCalled();
+				});
+
+				it('should not retry a non-retryable error when resuming the parent', async () => {
+					const { postExecutePromise, subworkflowResults } = setupParentExecutionTest(true);
+					executionRepository.updateExistingExecution.mockResolvedValue(true);
+
+					// child run succeeds; the parent resume fails with a non-retryable error.
+					workflowRunner.run
+						.mockResolvedValueOnce(execution.id)
+						.mockRejectedValue(new UnexpectedError('Only saved workflows can be resumed.'));
+
+					await waitTracker.startExecution(execution.id);
+					postExecutePromise.resolve(subworkflowResults);
+					await jest.advanceTimersByTimeAsync(5000);
+
+					// `workflowRunner.run` is called once for the sub-workflow and once for the (single) parent attempt
+					// the non-retryable error is not retried, and gets logged
+					expect(workflowRunner.run).toHaveBeenCalledTimes(2);
+					expect(logger.error).toHaveBeenCalled();
 				});
 			});
 		});

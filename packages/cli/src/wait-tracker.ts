@@ -4,6 +4,9 @@ import { OnLeaderStepdown, OnLeaderTakeover } from '@n8n/decorators';
 import { Service } from '@n8n/di';
 import { InstanceSettings } from 'n8n-core';
 import {
+	ApplicationError,
+	BaseError,
+	ensureError,
 	sleep,
 	UnexpectedError,
 	type IRun,
@@ -23,6 +26,16 @@ import {
 
 /** How many times each parent-resume step is attempted before giving up. */
 const MAX_PARENT_RESUME_ATTEMPTS = 3;
+
+/**
+ * Whether a parent-resume failure is worth retrying. Only transient
+ * infrastructure errors are, the raw DB or Redis failures, which
+ * surface as foreign error objects. n8n's own deliberate errors are
+ * excluded so we don't retry them.
+ */
+function isRetryableResumeError(error: unknown): boolean {
+	return !(error instanceof BaseError || error instanceof ApplicationError);
+}
 
 @Service()
 export class WaitTracker {
@@ -183,21 +196,29 @@ export class WaitTracker {
 			if (!subworkflowResults) return;
 			if (subworkflowResults.status === 'waiting') return; // The child execution is waiting, not completing.
 
-			await this.withRetry(async () => {
-				await updateParentExecutionWithChildResults(
-					this.executionRepository,
-					parentExecution.executionId,
-					subworkflowResults,
-				);
-			}, MAX_PARENT_RESUME_ATTEMPTS);
+			await this.withRetry(
+				async () => {
+					await updateParentExecutionWithChildResults(
+						this.executionRepository,
+						parentExecution.executionId,
+						subworkflowResults,
+					);
+				},
+				MAX_PARENT_RESUME_ATTEMPTS,
+				isRetryableResumeError,
+			);
 
-			await this.withRetry(async () => {
-				await this.startExecution(parentExecution.executionId);
-			}, MAX_PARENT_RESUME_ATTEMPTS);
+			await this.withRetry(
+				async () => {
+					await this.startExecution(parentExecution.executionId);
+				},
+				MAX_PARENT_RESUME_ATTEMPTS,
+				isRetryableResumeError,
+			);
 		} catch (error) {
 			this.logger.error('Failed to resume parent execution after sub-workflow completed', {
 				parentExecutionId: parentExecution.executionId,
-				error: error instanceof Error ? error.message : error,
+				error: ensureError(error).message,
 			});
 		}
 	}
@@ -205,15 +226,21 @@ export class WaitTracker {
 	/**
 	 * Run an operation up to `attempts` times with exponential backoff, returning
 	 * on the first success and rethrowing the last error if they all fail. Generic
-	 * (not specific to parent resume) — the caller passes the attempt count.
+	 * (not specific to parent resume) — the caller passes the attempt count and an
+	 * optional `shouldRetry` predicate; an error it rejects is rethrown immediately
+	 * instead of being retried.
 	 */
-	private async withRetry(operation: () => Promise<void>, attempts: number): Promise<void> {
+	private async withRetry(
+		operation: () => Promise<void>,
+		attempts: number,
+		shouldRetry: (error: unknown) => boolean = () => true,
+	): Promise<void> {
 		for (let attempt = 1; ; attempt++) {
 			try {
 				await operation();
 				return;
 			} catch (error) {
-				if (attempt >= attempts) throw error;
+				if (attempt >= attempts || !shouldRetry(error)) throw error;
 				await sleep(100 * 2 ** (attempt - 1));
 			}
 		}
