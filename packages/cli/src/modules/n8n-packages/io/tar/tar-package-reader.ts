@@ -98,7 +98,10 @@ export class TarPackageReader implements PackageReader {
 		const limits = this.limits;
 
 		return await new Promise((resolve, reject) => {
-			const parser = new Parser();
+			// strict mode turns node-tar's recoverable warnings (bad checksums,
+			// malformed headers, forbidden linkpaths) into errors instead of
+			// silently skipping the offending entry and reading the rest.
+			const parser = new Parser({ strict: true });
 
 			const fail = (message: string): void => {
 				if (aborted) return;

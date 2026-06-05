@@ -260,6 +260,22 @@ describe('TarPackageReader', () => {
 		});
 	});
 
+	describe('archive integrity', () => {
+		it('rejects an archive whose header checksum does not match', async () => {
+			const buffer = buildRawTar([{ path: 'manifest.json', content: '{}' }]);
+			// Corrupt a byte in the first header block, outside the checksum
+			// field (offset 148-155), so the stored checksum no longer matches
+			// the recomputed one. In strict mode node-tar surfaces this as an
+			// error; without it the entry would be silently skipped and the
+			// reader would instead report a missing manifest.
+			buffer[110] ^= 0xff;
+			const reader = new TarPackageReader(buffer, DEFAULT_LIMITS);
+
+			await expect(reader.readManifest()).rejects.toThrow(BadRequestError);
+			await expect(reader.readManifest()).rejects.toThrow(/Failed to read package archive/i);
+		});
+	});
+
 	describe('failure messages', () => {
 		it('returns a generic BadRequestError on malformed archive bytes', async () => {
 			const buffer = Buffer.from('this is not a tar at all, just random bytes');
