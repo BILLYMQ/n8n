@@ -11,8 +11,8 @@ n8n's **test platform** — the infrastructure that decides what to test, runs i
 | **janitor** | `@n8n/playwright-janitor` | Static analysis + architecture enforcement for the Playwright suite; also hosts the impact/orchestrate CLI used by CI. | `janitor` CLI | playwright, CI |
 | **code-health** | `@n8n/code-health` | Static analysis for monorepo dependency hygiene. | `code-health` CLI | CI |
 | **containers** | `n8n-containers` | Composable Docker stack for tests (sqlite / postgres / queue / multi-main / observability / kafka …). | `stack:*` scripts | playwright, local dev |
-| **playwright** | `n8n-playwright` | The E2E harness — page objects, composables, fixtures, and the shard distributor that drives CI. | `test:*` scripts | CI, local dev |
-| **performance** | `@n8n/performance` | Microbenchmarks for critical code paths (`bench`, baseline, compare). | `bench:*` scripts | CI (nightly), local |
+| **playwright** | `n8n-playwright` | The E2E harness — page objects, composables, fixtures, the shard distributor that drives CI, **and browser/UI performance** (`tests/performance/`: canvas perf, sentinels, infra benchmarks). | `test:*` / `bench:canvas*` scripts | CI, local dev |
+| **performance** | `@n8n/performance` | **Node microbenchmarks** (`vitest bench`) for critical code paths (expression engine, …) with baseline + regression-gate. | `bench:*` scripts | CI (nightly), local |
 
 ## How they fit together
 
@@ -33,7 +33,7 @@ graph TD
 - **Static-analysis lane:** `rules-engine` (substrate) → `janitor` (Playwright architecture) and `code-health` (monorepo deps).
 - **Selection lane:** `test-impact` (coverage map → select → distribute) feeds the janitor CLI and the playwright shard distributor.
 - **Execution lane:** `playwright` runs E2E against `containers`-provided stacks.
-- **Performance lane:** `performance` is standalone (benchmarks).
+- **Performance lane (two altitudes):** `performance` for **Node microbenchmarks** (`vitest bench`, e.g. the expression engine); `playwright/tests/performance/` for **browser/UI macrobenchmarks** (canvas cold-load, pan-frame p95, heap) run as a Playwright project with regression sentinels. Different layer, different harness — both gate on regression.
 
 ## Where to look (quick nav for humans + agents)
 
