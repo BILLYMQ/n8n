@@ -1,0 +1,220 @@
+{
+	"name": "CV Job Tailor — Adzuna",
+	"nodes": [
+		{
+			"parameters": {
+				"formTitle": "CV Job Matcher",
+				"formDescription": "Paste your CV text to find matching jobs and receive a tailored CV for each opportunity.",
+				"formFields": {
+					"values": [
+						{
+							"fieldLabel": "CV Text",
+							"fieldType": "textarea",
+							"requiredField": true,
+							"placeholder": "Paste the full text content of your CV here..."
+						},
+						{
+							"fieldLabel": "Desired Job Title",
+							"fieldType": "text",
+							"requiredField": false,
+							"placeholder": "e.g. Senior Software Engineer (optional)"
+						},
+						{
+							"fieldLabel": "Location",
+							"fieldType": "text",
+							"requiredField": false,
+							"placeholder": "e.g. Paris, Remote (optional)"
+						}
+					]
+				},
+				"responseMode": "lastNode",
+				"responseText": "Your tailored CVs are ready!"
+			},
+			"id": "form-trigger",
+			"name": "CV Form",
+			"type": "n8n-nodes-base.formTrigger",
+			"typeVersion": 2.2,
+			"position": [240, 300],
+			"webhookId": "cv-job-tailor-trigger"
+		},
+		{
+			"parameters": {
+				"promptType": "define",
+				"text": "=You are an expert HR analyst and career advisor.\n\nAnalyse the following CV and extract a structured profile:\n\n<cv>\n{{ $json[\"CV Text\"] }}\n</cv>\n\nReturn ONLY a JSON object (no markdown) with:\n{\n  \"name\": \"candidate full name or 'Unknown'\",\n  \"summary\": \"2-3 sentence professional summary\",\n  \"primary_job_title\": \"most suitable job title based on experience\",\n  \"skills\": [\"skill1\", \"skill2\", ...],\n  \"years_experience\": <number>,\n  \"education_level\": \"highest degree\",\n  \"languages\": [\"language1\", ...],\n  \"search_keywords\": \"3-5 keywords ideal for job search based on this profile\"\n}",
+				"hasOutputParser": false
+			},
+			"id": "extract-cv-profile",
+			"name": "Extract CV Profile",
+			"type": "@n8n/n8n-nodes-langchain.chainLlm",
+			"typeVersion": 1.5,
+			"position": [500, 300]
+		},
+		{
+			"parameters": {
+				"model": "gpt-4o-mini"
+			},
+			"id": "llm-extract",
+			"name": "OpenAI — Extract",
+			"type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+			"typeVersion": 1.2,
+			"position": [500, 480],
+			"credentials": {
+				"openAiApi": {
+					"id": "openai-credential",
+					"name": "OpenAI account"
+				}
+			}
+		},
+		{
+			"parameters": {
+				"jsCode": "const raw = $input.first().json.text || $input.first().json.response || '';\n// Strip markdown code fences if present\nconst cleaned = raw.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\nlet profile;\ntry {\n  profile = JSON.parse(cleaned);\n} catch {\n  profile = { search_keywords: 'developer', primary_job_title: 'developer', summary: cleaned };\n}\n\n// Merge with original form data\nconst form = $('CV Form').first().json;\nreturn [{\n  json: {\n    ...profile,\n    desired_title: form['Desired Job Title'] || profile.primary_job_title,\n    location: form['Location'] || '',\n    cv_text: form['CV Text']\n  }\n}];"
+			},
+			"id": "parse-profile",
+			"name": "Parse Profile JSON",
+			"type": "n8n-nodes-base.code",
+			"typeVersion": 2,
+			"position": [760, 300]
+		},
+		{
+			"parameters": {
+				"operation": "searchJobs",
+				"country": "us",
+				"what": "={{ $json.desired_title || $json.search_keywords }}",
+				"where": "={{ $json.location }}",
+				"results_per_page": 5,
+				"page": 1,
+				"additionalFields": {
+					"sort_by": "relevance",
+					"sort_dir": "down"
+				}
+			},
+			"id": "search-jobs",
+			"name": "Search Jobs (Adzuna)",
+			"type": "n8n-nodes-base.adzuna",
+			"typeVersion": 1,
+			"position": [1020, 300],
+			"credentials": {
+				"adzunaApi": {
+					"id": "adzuna-credential",
+					"name": "Adzuna account"
+				}
+			}
+		},
+		{
+			"parameters": {
+				"jsCode": "// Attach candidate profile to each job item\nconst profile = $('Parse Profile JSON').first().json;\nreturn $input.all().map(item => ({\n  json: {\n    job_id: item.json.id,\n    job_title: item.json.title,\n    company: item.json.company?.display_name || 'Unknown',\n    location: item.json.location?.display_name || '',\n    salary_min: item.json.salary_min,\n    salary_max: item.json.salary_max,\n    description: (item.json.description || '').substring(0, 1500),\n    redirect_url: item.json.redirect_url,\n    // candidate profile\n    candidate_name: profile.name,\n    candidate_summary: profile.summary,\n    candidate_skills: profile.skills,\n    candidate_experience: profile.years_experience,\n    candidate_education: profile.education_level,\n    candidate_languages: profile.languages,\n    cv_text: profile.cv_text\n  }\n}));"
+			},
+			"id": "enrich-jobs",
+			"name": "Enrich Jobs with Profile",
+			"type": "n8n-nodes-base.code",
+			"typeVersion": 2,
+			"position": [1280, 300]
+		},
+		{
+			"parameters": {
+				"promptType": "define",
+				"text": "=You are an expert CV writer and career coach.\n\nYou must create a tailored, professional CV for the candidate below, specifically optimised for the following job offer.\n\n## JOB OFFER\nTitle: {{ $json.job_title }}\nCompany: {{ $json.company }}\nLocation: {{ $json.location }}\nDescription: {{ $json.description }}\n\n## CANDIDATE ORIGINAL CV\n{{ $json.cv_text }}\n\n## INSTRUCTIONS\n1. Rewrite the professional summary to match the job requirements.\n2. Reorder and emphasise skills that are most relevant to this job.\n3. Rephrase work experience bullet points using keywords from the job description.\n4. Keep all factual information (dates, titles, companies, degrees) accurate — do NOT invent anything.\n5. Keep the CV concise (max 2 pages equivalent in text).\n6. Format as clean plain text, sections separated by blank lines.\n\nReturn ONLY the tailored CV text, starting with the candidate's name.",
+				"hasOutputParser": false
+			},
+			"id": "tailor-cv",
+			"name": "Tailor CV for Job",
+			"type": "@n8n/n8n-nodes-langchain.chainLlm",
+			"typeVersion": 1.5,
+			"position": [1540, 300]
+		},
+		{
+			"parameters": {
+				"model": "gpt-4o"
+			},
+			"id": "llm-tailor",
+			"name": "OpenAI — Tailor",
+			"type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+			"typeVersion": 1.2,
+			"position": [1540, 480],
+			"credentials": {
+				"openAiApi": {
+					"id": "openai-credential",
+					"name": "OpenAI account"
+				}
+			}
+		},
+		{
+			"parameters": {
+				"jsCode": "// Combine tailored CV with job metadata\nconst job = $('Enrich Jobs with Profile').item.json;\nconst tailoredCv = $input.first().json.text || $input.first().json.response || '';\nreturn [{\n  json: {\n    job_title: job.job_title,\n    company: job.company,\n    location: job.location,\n    salary_min: job.salary_min,\n    salary_max: job.salary_max,\n    apply_url: job.redirect_url,\n    tailored_cv: tailoredCv\n  }\n}];"
+			},
+			"id": "package-result",
+			"name": "Package Result",
+			"type": "n8n-nodes-base.code",
+			"typeVersion": 2,
+			"position": [1800, 300]
+		},
+		{
+			"parameters": {
+				"aggregate": "aggregateAllItemData",
+				"destinationFieldName": "applications",
+				"include": "allFields"
+			},
+			"id": "aggregate-results",
+			"name": "Aggregate All Applications",
+			"type": "n8n-nodes-base.aggregate",
+			"typeVersion": 1,
+			"position": [2060, 300]
+		},
+		{
+			"parameters": {
+				"respondWith": "json",
+				"responseBody": "={{ JSON.stringify($json.applications, null, 2) }}"
+			},
+			"id": "respond",
+			"name": "Return Results",
+			"type": "n8n-nodes-base.respondToWebhook",
+			"typeVersion": 1.1,
+			"position": [2320, 300]
+		}
+	],
+	"connections": {
+		"CV Form": {
+			"main": [[{ "node": "Extract CV Profile", "type": "main", "index": 0 }]]
+		},
+		"OpenAI — Extract": {
+			"ai_languageModel": [
+				[{ "node": "Extract CV Profile", "type": "ai_languageModel", "index": 0 }]
+			]
+		},
+		"Extract CV Profile": {
+			"main": [[{ "node": "Parse Profile JSON", "type": "main", "index": 0 }]]
+		},
+		"Parse Profile JSON": {
+			"main": [[{ "node": "Search Jobs (Adzuna)", "type": "main", "index": 0 }]]
+		},
+		"Search Jobs (Adzuna)": {
+			"main": [[{ "node": "Enrich Jobs with Profile", "type": "main", "index": 0 }]]
+		},
+		"Enrich Jobs with Profile": {
+			"main": [[{ "node": "Tailor CV for Job", "type": "main", "index": 0 }]]
+		},
+		"OpenAI — Tailor": {
+			"ai_languageModel": [
+				[{ "node": "Tailor CV for Job", "type": "ai_languageModel", "index": 0 }]
+			]
+		},
+		"Tailor CV for Job": {
+			"main": [[{ "node": "Package Result", "type": "main", "index": 0 }]]
+		},
+		"Package Result": {
+			"main": [[{ "node": "Aggregate All Applications", "type": "main", "index": 0 }]]
+		},
+		"Aggregate All Applications": {
+			"main": [[{ "node": "Return Results", "type": "main", "index": 0 }]]
+		}
+	},
+	"settings": {
+		"executionOrder": "v1"
+	},
+	"meta": {
+		"templateId": "cv-job-tailor-adzuna",
+		"description": "Analyzes a CV with AI, searches matching jobs via Adzuna, and generates a tailored CV for each job offer.",
+		"categories": ["AI", "Career", "HR"],
+		"requiredCredentials": ["openAiApi", "adzunaApi"]
+	}
+}

@@ -110,6 +110,9 @@ const SettingsAiGatewayView = async () =>
 const ResourceCenterView = async () =>
 	await import('@/experiments/resourceCenter/views/ResourceCenterView.vue');
 
+const CareerApplicationsView = async () =>
+	await import('@/features/career/views/CareerApplicationsView.vue');
+
 const SecuritySettingsView = async () =>
 	await import('@/features/settings/security/SecuritySettings.vue');
 
@@ -321,6 +324,15 @@ export const routes: RouteRecordRaw[] = [
 			void waitForPendingFeatureFlags(posthogStore).then(() => {
 				allowResourceCenterRoute(posthogStore, next);
 			});
+		},
+	},
+
+	{
+		path: '/career/applications',
+		name: VIEWS.CAREER_APPLICATIONS,
+		component: CareerApplicationsView,
+		meta: {
+			middleware: ['authenticated'],
 		},
 	},
 

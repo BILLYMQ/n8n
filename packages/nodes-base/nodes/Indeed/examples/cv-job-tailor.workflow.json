@@ -1,0 +1,280 @@
+{
+	"name": "CV Job Tailor — Indeed",
+	"nodes": [
+		{
+			"parameters": {
+				"formTitle": "CV Job Matcher",
+				"formDescription": "Uploadez votre CV (PDF ou DOCX), indiquez le poste souhaité et le pays. Le système trouvera les meilleures offres Indeed et générera un CV adapté à chacune.",
+				"formFields": {
+					"values": [
+						{
+							"fieldLabel": "CV (PDF ou DOCX)",
+							"fieldType": "file",
+							"acceptFileTypes": ".pdf,.docx,.doc",
+							"requiredField": true
+						},
+						{
+							"fieldLabel": "Poste recherché",
+							"fieldType": "text",
+							"requiredField": false,
+							"placeholder": "ex: Développeur Python, Chef de projet..."
+						},
+						{
+							"fieldLabel": "Lieu",
+							"fieldType": "text",
+							"requiredField": false,
+							"placeholder": "ex: Paris, Remote, Lyon..."
+						},
+						{
+							"fieldLabel": "Pays",
+							"fieldType": "dropdown",
+							"fieldOptions": {
+								"values": [
+									{ "option": "États-Unis (us)" },
+									{ "option": "France (fr)" },
+									{ "option": "Royaume-Uni (uk)" },
+									{ "option": "Canada (ca)" },
+									{ "option": "Belgique (be)" },
+									{ "option": "Suisse (ch)" }
+								]
+							},
+							"requiredField": true
+						}
+					]
+				},
+				"responseMode": "lastNode",
+				"responseText": "Vos CVs adaptés sont prêts !"
+			},
+			"id": "form-trigger",
+			"name": "Formulaire CV",
+			"type": "n8n-nodes-base.formTrigger",
+			"typeVersion": 2.2,
+			"position": [200, 300],
+			"webhookId": "cv-job-tailor-indeed-trigger"
+		},
+		{
+			"parameters": {
+				"operation": "pdf",
+				"options": {}
+			},
+			"id": "extract-pdf",
+			"name": "Extraire texte du CV",
+			"type": "n8n-nodes-base.extractFromFile",
+			"typeVersion": 1,
+			"position": [460, 300]
+		},
+		{
+			"parameters": {
+				"jsCode": "// Récupérer le texte extrait du PDF et les données du formulaire\nconst cvText = $input.first().json.text || $input.first().json.content || '';\nconst form = $('Formulaire CV').first().json;\n\nreturn [{\n  json: {\n    cv_text: cvText,\n    desired_title: form['Poste recherché'] || '',\n    location: form['Lieu'] || '',\n    country_raw: form['Pays'] || 'us'\n  }\n}];"
+			},
+			"id": "prepare-input",
+			"name": "Préparer données",
+			"type": "n8n-nodes-base.code",
+			"typeVersion": 2,
+			"position": [720, 300]
+		},
+		{
+			"parameters": {
+				"promptType": "define",
+				"text": "=Tu es un expert RH et conseiller en carrière.\n\nAnalyse ce CV et extrais un profil structuré :\n\n<cv>\n{{ $json.cv_text }}\n</cv>\n\nRetourne UNIQUEMENT un objet JSON (sans markdown) :\n{\n  \"name\": \"nom complet du candidat ou 'Inconnu'\",\n  \"summary\": \"résumé professionnel de 2-3 phrases\",\n  \"primary_job_title\": \"titre de poste le plus adapté au profil\",\n  \"skills\": [\"compétence1\", \"compétence2\", ...],\n  \"years_experience\": <nombre>,\n  \"education_level\": \"diplôme le plus élevé\",\n  \"languages\": [\"langue1\", ...],\n  \"search_keywords\": \"3-5 mots-clés optimaux pour la recherche d'emploi\"\n}",
+				"hasOutputParser": false
+			},
+			"id": "extract-profile",
+			"name": "Extraire profil CV",
+			"type": "@n8n/n8n-nodes-langchain.chainLlm",
+			"typeVersion": 1.5,
+			"position": [980, 300]
+		},
+		{
+			"parameters": {
+				"model": "gpt-4o-mini"
+			},
+			"id": "llm-extract",
+			"name": "OpenAI — Extraction",
+			"type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+			"typeVersion": 1.2,
+			"position": [980, 480],
+			"credentials": {
+				"openAiApi": {
+					"id": "openai-credential",
+					"name": "OpenAI account"
+				}
+			}
+		},
+		{
+			"parameters": {
+				"jsCode": "const raw = $input.first().json.text || $input.first().json.response || '';\nconst cleaned = raw.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\nlet profile;\ntry {\n  profile = JSON.parse(cleaned);\n} catch {\n  profile = { search_keywords: 'développeur', primary_job_title: 'développeur' };\n}\n\n// Extraire le code pays depuis la sélection du formulaire (ex: \"France (fr)\" → \"fr\")\nconst prep = $('Préparer données').first().json;\nconst countryMatch = (prep.country_raw || 'us').match(/\\(([a-z]{2})\\)/);\nconst country = countryMatch ? countryMatch[1] : 'us';\n\nreturn [{\n  json: {\n    ...profile,\n    desired_title: prep.desired_title || profile.primary_job_title,\n    location: prep.location || '',\n    country,\n    cv_text: prep.cv_text\n  }\n}];"
+			},
+			"id": "parse-profile",
+			"name": "Parser profil JSON",
+			"type": "n8n-nodes-base.code",
+			"typeVersion": 2,
+			"position": [1240, 300]
+		},
+		{
+			"parameters": {
+				"operation": "searchJobs",
+				"query": "={{ $json.desired_title || $json.search_keywords }}",
+				"location": "={{ $json.location }}",
+				"locality": "={{ $json.country }}",
+				"page_id": 1,
+				"additionalFields": {
+					"sort": "relevance",
+					"fromage": "any"
+				}
+			},
+			"id": "search-indeed",
+			"name": "Recherche Indeed",
+			"type": "n8n-nodes-base.indeed",
+			"typeVersion": 1,
+			"position": [1500, 300],
+			"credentials": {
+				"indeedApi": {
+					"id": "indeed-credential",
+					"name": "Indeed account"
+				}
+			}
+		},
+		{
+			"parameters": {
+				"operation": "getJobDetails",
+				"jobId": "={{ $json.job_id }}",
+				"locality": "={{ $('Parser profil JSON').first().json.country }}"
+			},
+			"id": "get-job-details",
+			"name": "Détails offre Indeed",
+			"type": "n8n-nodes-base.indeed",
+			"typeVersion": 1,
+			"position": [1760, 300],
+			"credentials": {
+				"indeedApi": {
+					"id": "indeed-credential",
+					"name": "Indeed account"
+				}
+			}
+		},
+		{
+			"parameters": {
+				"jsCode": "// Fusionner les détails de l'offre avec le profil candidat\nconst job = $input.first().json;\nconst profile = $('Parser profil JSON').first().json;\nconst searchResult = $('Recherche Indeed').item.json;\n\nreturn [{\n  json: {\n    // Données offre\n    job_id: job.jobKey || searchResult.job_id,\n    job_title: job.title || searchResult.title,\n    company: job.company || searchResult.company,\n    location: job.location || searchResult.location,\n    description: (job.jobDescription || job.description || searchResult.snippet || '').substring(0, 2000),\n    apply_url: job.viewJobLink || searchResult.link,\n    salary: job.salarySnippet || '',\n    // Profil candidat\n    candidate_name: profile.name,\n    candidate_skills: profile.skills,\n    candidate_experience: profile.years_experience,\n    cv_text: profile.cv_text\n  }\n}];"
+			},
+			"id": "enrich-job",
+			"name": "Enrichir offre + profil",
+			"type": "n8n-nodes-base.code",
+			"typeVersion": 2,
+			"position": [2020, 300]
+		},
+		{
+			"parameters": {
+				"promptType": "define",
+				"text": "=Tu es un expert rédacteur de CV et coach carrière.\n\nCrée un CV personnalisé et professionnel pour le candidat ci-dessous, spécifiquement optimisé pour l'offre d'emploi suivante.\n\n## OFFRE D'EMPLOI\nPoste : {{ $json.job_title }}\nEntreprise : {{ $json.company }}\nLieu : {{ $json.location }}\nSalaire : {{ $json.salary }}\nDescription :\n{{ $json.description }}\n\n## CV ORIGINAL DU CANDIDAT\n{{ $json.cv_text }}\n\n## INSTRUCTIONS\n1. Réécris le résumé professionnel pour coller exactement aux exigences du poste.\n2. Mets en avant et réordonne les compétences les plus pertinentes pour cette offre.\n3. Reformule les expériences professionnelles avec les mots-clés de l'offre.\n4. Conserve toutes les informations factuelles (dates, titres, entreprises, diplômes) — n'invente rien.\n5. CV concis, maximum 2 pages en texte.\n6. Format texte clair, sections séparées par des lignes vides.\n\nRetourne UNIQUEMENT le CV adapté, en commençant par le nom du candidat.",
+				"hasOutputParser": false
+			},
+			"id": "tailor-cv",
+			"name": "Adapter le CV",
+			"type": "@n8n/n8n-nodes-langchain.chainLlm",
+			"typeVersion": 1.5,
+			"position": [2280, 300]
+		},
+		{
+			"parameters": {
+				"model": "gpt-4o"
+			},
+			"id": "llm-tailor",
+			"name": "OpenAI — Rédaction CV",
+			"type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+			"typeVersion": 1.2,
+			"position": [2280, 480],
+			"credentials": {
+				"openAiApi": {
+					"id": "openai-credential",
+					"name": "OpenAI account"
+				}
+			}
+		},
+		{
+			"parameters": {
+				"jsCode": "const job = $('Enrichir offre + profil').item.json;\nconst tailoredCv = $input.first().json.text || $input.first().json.response || '';\nreturn [{\n  json: {\n    poste: job.job_title,\n    entreprise: job.company,\n    lieu: job.location,\n    salaire: job.salary,\n    lien_candidature: job.apply_url,\n    cv_adapte: tailoredCv\n  }\n}];"
+			},
+			"id": "package-result",
+			"name": "Préparer résultat",
+			"type": "n8n-nodes-base.code",
+			"typeVersion": 2,
+			"position": [2540, 300]
+		},
+		{
+			"parameters": {
+				"aggregate": "aggregateAllItemData",
+				"destinationFieldName": "candidatures",
+				"include": "allFields"
+			},
+			"id": "aggregate",
+			"name": "Agréger candidatures",
+			"type": "n8n-nodes-base.aggregate",
+			"typeVersion": 1,
+			"position": [2800, 300]
+		},
+		{
+			"parameters": {
+				"respondWith": "json",
+				"responseBody": "={{ JSON.stringify($json.candidatures, null, 2) }}"
+			},
+			"id": "respond",
+			"name": "Retourner résultats",
+			"type": "n8n-nodes-base.respondToWebhook",
+			"typeVersion": 1.1,
+			"position": [3060, 300]
+		}
+	],
+	"connections": {
+		"Formulaire CV": {
+			"main": [[{ "node": "Extraire texte du CV", "type": "main", "index": 0 }]]
+		},
+		"Extraire texte du CV": {
+			"main": [[{ "node": "Préparer données", "type": "main", "index": 0 }]]
+		},
+		"Préparer données": {
+			"main": [[{ "node": "Extraire profil CV", "type": "main", "index": 0 }]]
+		},
+		"OpenAI — Extraction": {
+			"ai_languageModel": [
+				[{ "node": "Extraire profil CV", "type": "ai_languageModel", "index": 0 }]
+			]
+		},
+		"Extraire profil CV": {
+			"main": [[{ "node": "Parser profil JSON", "type": "main", "index": 0 }]]
+		},
+		"Parser profil JSON": {
+			"main": [[{ "node": "Recherche Indeed", "type": "main", "index": 0 }]]
+		},
+		"Recherche Indeed": {
+			"main": [[{ "node": "Détails offre Indeed", "type": "main", "index": 0 }]]
+		},
+		"Détails offre Indeed": {
+			"main": [[{ "node": "Enrichir offre + profil", "type": "main", "index": 0 }]]
+		},
+		"Enrichir offre + profil": {
+			"main": [[{ "node": "Adapter le CV", "type": "main", "index": 0 }]]
+		},
+		"OpenAI — Rédaction CV": {
+			"ai_languageModel": [[{ "node": "Adapter le CV", "type": "ai_languageModel", "index": 0 }]]
+		},
+		"Adapter le CV": {
+			"main": [[{ "node": "Préparer résultat", "type": "main", "index": 0 }]]
+		},
+		"Préparer résultat": {
+			"main": [[{ "node": "Agréger candidatures", "type": "main", "index": 0 }]]
+		},
+		"Agréger candidatures": {
+			"main": [[{ "node": "Retourner résultats", "type": "main", "index": 0 }]]
+		}
+	},
+	"settings": {
+		"executionOrder": "v1"
+	},
+	"meta": {
+		"templateId": "cv-job-tailor-indeed",
+		"description": "Uploade un CV (PDF/DOCX), extrait le profil avec l'IA, recherche des offres sur Indeed, et génère un CV personnalisé pour chaque poste.",
+		"categories": ["AI", "Career", "HR", "Indeed"],
+		"requiredCredentials": ["openAiApi", "indeedApi"]
+	}
+}
